@@ -11,6 +11,7 @@ A tool for scraping, storing and serving events from LiFi's fee collector smart 
 - Unit, integration and e2e tests
 - Structured logging with Pino
 - Schema validation with Zod
+- Run as Docker container
 
 ## Getting Started
 
@@ -19,25 +20,32 @@ A tool for scraping, storing and serving events from LiFi's fee collector smart 
 - Node.js 22
 - MongoDB
 - npm
+- Docker
 
 ### Installation & Start
 
-Install dependencies:
+#### Install dependencies:
 
 ```bash
 npm install
 ```
 
-Build the project:
+#### Build the project:
 
 ```bash
 npm run build
 ```
 
-Run the application:
+#### Run the application:
 
 ```bash
 npm start
+```
+
+#### Run using Docker:
+
+```bash
+docker-compose up --build
 ```
 
 ## Development
@@ -86,12 +94,13 @@ src/
 - Pino (logging)
 - ethers v5
 - jest & superterst
+- Docker
 
 ## Testing
 
 ### Overview
 
-The project uses Jest as the testing framework. Tests are organized into three categories:
+The project uses Jest as the testing framework, and Supertest for API testing. Tests are organized into three categories:
 
 - Unit Tests: Testing individual components in isolation
 - Integration Tests: Testing component interactions
@@ -126,7 +135,8 @@ tests/
 │   │   ├── blockchainService.test.ts
 │   │   └── scannerService.test.ts
 │   ├── models/
-│   │   └── FeeCollectedEvent.test.ts
+│   │   |── FeeCollectedEvent.test.ts
+│   │   |── LastScannedBlock.test.ts
 │   └── utils/
 │       └── logger.test.ts
 ├── integration/
@@ -137,7 +147,8 @@ tests/
 
 ### Unit Tests
 
-Unit tests focus on testing individual components in isolation. Here's what we test:
+Unit tests focus on testing individual components in isolation.
+Utilises an in-memory mongodb
 
 #### EventService
 
@@ -198,6 +209,41 @@ Unit tests focus on testing individual components in isolation. Here's what we t
   - Maintains scanning progress
   - Verifies event storage
   - Handles reconnection scenarios
+
+### Integration Tests
+
+Integration tests focus on testing flows depending on multiple modules.
+Utilises a testing database inside MongoDB to ensure validity of operations.
+
+#### Scanner Integration
+
+- `scanBlocks`
+  - Successfully scans blocks and stores events
+  - Handles empty block ranges
+  - Handles blockchain errors gracefully
+  - Handles database errors gracefully
+  - Scans blocks in chunks correctly
+
+#### API Endpoint Integration
+
+- `GET /events/integrator/:integrator`
+  - Returns events for a valid integrator
+  - Returns 400 for invalid integrator address
+  - Properly filters events by integrator
+  - Returns correct metadata and response structure
+
+### E2E Tests
+
+This test runs the application for a given block interval.
+Utilises a testing database inside MongoDB to ensure validity of operations.
+
+#### Full Scanner Flow
+
+- `scan blocks and store events end-to-end`
+  - Successfully scans a block range (1000 blocks)
+  - Verifies events are stored in the database
+  - Confirms last scanned block is updated
+  - Validates data persistence across operations
 
 ### Mocking Strategy
 
