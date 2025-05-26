@@ -14,7 +14,11 @@ export class LastScannedBlock {
 	public chainId!: number;
 
 	@prop({ required: true }) // The last block number successfully scanned for this chain
-	public blockNumber!: number; 
+	public blockNumber!: number;
+
+	// Timestamp fields added by Mongoose
+	public createdAt!: Date;
+	public updatedAt!: Date;
 }
 
 export const LastScannedBlockModel = getModelForClass(LastScannedBlock);

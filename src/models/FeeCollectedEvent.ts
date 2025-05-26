@@ -3,8 +3,8 @@ import {
 	getModelForClass,
 	modelOptions,
 	Severity,
+	index,
 } from "@typegoose/typegoose";
-import { BigNumber } from "ethers";
 
 /**
  * Model for the FeeCollectedEvent
@@ -18,6 +18,7 @@ import { BigNumber } from "ethers";
 		allowMixed: Severity.ALLOW, // Allow mixed types for certain fields if needed, or define specific types.
 	},
 })
+@index({ transactionHash: 1, logIndex: 1 }, { unique: true })
 export class FeeCollectedEvent {
 	@prop({ required: true, index: true })
 	public chainId!: number; // ChainId of the given network
@@ -31,32 +32,26 @@ export class FeeCollectedEvent {
 	@prop({ required: true, index: true })
 	public integrator!: string; // the integrator that triggered the fee collection
 
-	// Store BigNumber as string to prevent precision issues
-	@prop({
-		required: true,
-		type: String, // Store as string
-		get: (val: string) => BigNumber.from(val), // Convert back to BigNumber on retrieval
-		set: (val: BigNumber) => val.toString(), // Convert to string on save
-	})
-	public integratorFee!: BigNumber; // the share collected for the integrator
+	// Store as string to prevent precision issues
+	@prop({ required: true, type: String })
+	public integratorFee!: string; // the share collected for the integrator
 
-	// Store BigNumber as string
-	@prop({
-		required: true,
-		type: String,
-		get: (val: string) => BigNumber.from(val),
-		set: (val: BigNumber) => val.toString(),
-	})
-	public lifiFee!: BigNumber; // the share collected for lifi
+	// Store as string
+	@prop({ required: true, type: String })
+	public lifiFee!: string; // the share collected for lifi
 
 	@prop({ required: true, index: true })
 	public blockNumber!: number; // The block number where the event occurred
 
-	@prop({ required: true, unique: true }) // transactionHash + logIndex should be unique
+	@prop({ required: true })
 	public transactionHash!: string; // Hash of the transaction that emitted the event
 
-	@prop({ required: true, unique: true }) // transactionHash + logIndex should be unique
+	@prop({ required: true })
 	public logIndex!: number; // The index of the log within the transaction
+
+	// Timestamp fields added by Mongoose
+	public createdAt!: Date;
+	public updatedAt!: Date;
 }
 
 export const FeeCollectedEventModel = getModelForClass(FeeCollectedEvent);

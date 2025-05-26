@@ -14,7 +14,7 @@ dotenv.config();
  * @property {number} chainId - The chain ID for the scan
  */
 export const config = {
-	mongoUri: process.env.MONGO_URI || "mongodb://localhost:27017/feecollector",
+	mongoUri: process.env.MONGO_URI || "mongodb://localhost:27017/prod",
 	polygonRpcUrl: process.env.POLYGON_RPC_URL || "https://polygon-rpc.com",
 	contractAddress:
 		process.env.CONTRACT_ADDRESS ||
@@ -24,4 +24,5 @@ export const config = {
 	startBlock: process.env.START_BLOCK || 0,
 	chunkSize: parseInt(process.env.CHUNK_SIZE || "500"),
 	chainId: parseInt(process.env.CHAIN_ID || "137"),
+	testMongoUri: process.env.TEST_MONGO_URI || "mongodb://localhost:27017/test",
 };

@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import logger from "./utils/logger";
 
 /**
  * Connects to MongoDB
@@ -7,9 +8,9 @@ import mongoose from "mongoose";
 export async function connectDB(uri: string): Promise<void> {
 	try {
 		await mongoose.connect(uri);
-		console.log("MongoDB connected successfully!");
+		logger.info("MongoDB connected successfully!");
 	} catch (error) {
-		console.error("MongoDB connection error:", error);
+		logger.error("MongoDB connection error:", error);
 		process.exit(1); // Exit process with failure
 	}
 }
@@ -20,8 +21,8 @@ export async function connectDB(uri: string): Promise<void> {
 export async function disconnectDB(): Promise<void> {
 	try {
 		await mongoose.disconnect();
-		console.log("MongoDB disconnected.");
+		logger.info("MongoDB disconnected.");
 	} catch (error) {
-		console.error("Error disconnecting from MongoDB:", error);
+		logger.error("Error disconnecting from MongoDB:", error);
 	}
 }
