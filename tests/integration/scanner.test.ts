@@ -16,15 +16,23 @@ import {
 	beforeEach,
 	jest,
 } from "@jest/globals";
+import logger from "../../src/utils/logger";
 
 // Mock the services
 jest.mock("../../src/services/blockchainService");
 jest.mock("../../src/services/eventService");
 jest.mock("ethers");
 
+// Mock the logger
+jest.mock("../../src/utils/logger", () => ({
+	info: jest.fn(),
+	error: jest.fn(),
+	warn: jest.fn(),
+	debug: jest.fn(),
+}));
+
 // Increase timeout for database operations
 jest.setTimeout(30000);
-
 
 describe("Scanner Integration", () => {
 	let scannerService: ScannerService;
@@ -86,7 +94,7 @@ describe("Scanner Integration", () => {
 			// Initialize service
 			scannerService = new ScannerService();
 		} catch (error) {
-			console.error("Setup failed:", error);
+			logger.error({ error }, "Setup failed");
 			throw error;
 		}
 	});
@@ -102,7 +110,7 @@ describe("Scanner Integration", () => {
 				await mongoose.disconnect();
 			}
 		} catch (error) {
-			console.error("Cleanup failed:", error);
+			logger.error({ error }, "Cleanup failed");
 			throw error;
 		}
 	});
@@ -119,7 +127,7 @@ describe("Scanner Integration", () => {
 			// Reset all mocks
 			jest.clearAllMocks();
 		} catch (error) {
-			console.error("BeforeEach cleanup failed:", error);
+			logger.error({ error }, "BeforeEach cleanup failed");
 			throw error;
 		}
 	});

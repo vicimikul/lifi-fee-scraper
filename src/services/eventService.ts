@@ -4,6 +4,7 @@ import { FeeCollectedEventData, FeeCollectedEventDTO } from "../types/events";
 import { config } from "../config";
 import mongoose from "mongoose";
 import logger from "../utils/logger";
+import { DatabaseError, ValidationError } from "../errors/AppError";
 
 /**
  * Service responsible for handling event-related database operations
@@ -13,7 +14,8 @@ export class EventService {
 	/**
 	 * Stores fee collection events in MongoDB
 	 * @param events - Array of FeeCollectedEventData to be stored
-	 * @throws {Error} If there's an error during the database operation
+	 * @throws {DatabaseError} If there's an error during the database operation
+	 * @throws {ValidationError} If event data is invalid
 	 */
 	async storeEvents(events: FeeCollectedEventData[]): Promise<void> {
 		const documents: FeeCollectedEventDTO[] = events.map((event) => {
@@ -79,10 +81,10 @@ export class EventService {
 					typeof doc.integratorFee !== "string" ||
 					isNaN(Number(doc.integratorFee))
 				) {
-					throw new Error("Invalid integrator fee format");
+					throw new ValidationError("Invalid integrator fee format");
 				}
 				if (typeof doc.lifiFee !== "string" || isNaN(Number(doc.lifiFee))) {
-					throw new Error("Invalid lifi fee format");
+					throw new ValidationError("Invalid lifi fee format");
 				}
 			}
 
@@ -147,7 +149,7 @@ export class EventService {
 					return; // Return early for duplicate events
 				} else {
 					logger.error({ error }, "Error storing events in MongoDB");
-					throw error;
+					throw new DatabaseError("Failed to store events in database");
 				}
 			}
 
@@ -155,20 +157,24 @@ export class EventService {
 				{ count: documents.length },
 				`Successfully stored ${documents.length} events in MongoDB`
 			);
-		} catch (error: any) {
+		} catch (error) {
 			logger.error({ error }, "Error storing events in MongoDB");
-			throw error;
+			if (error instanceof ValidationError) {
+				throw error;
+			}
+			throw new DatabaseError("Failed to store events in database");
 		}
 	}
 
 	/**
 	 * Updates the last scanned block number in the database
 	 * @param blockNumber - The block number to be stored as the last scanned block
-	 * @throws {Error} If there's an error updating the last scanned block or if block number is invalid
+	 * @throws {ValidationError} If block number is invalid
+	 * @throws {DatabaseError} If there's an error updating the last scanned block
 	 */
 	async updateLastScannedBlock(blockNumber: number): Promise<void> {
 		if (blockNumber < 0) {
-			throw new Error("Invalid block number");
+			throw new ValidationError("Invalid block number");
 		}
 
 		try {
@@ -183,14 +189,14 @@ export class EventService {
 			);
 		} catch (error) {
 			logger.error({ error }, "Error updating last scanned block");
-			throw error;
+			throw new DatabaseError("Failed to update last scanned block");
 		}
 	}
 
 	/**
 	 * Retrieves the last scanned block number from the database
 	 * @returns {Promise<number>} The last scanned block number, or the start block if no block has been scanned
-	 * @throws {Error} If there's an error retrieving the last scanned block
+	 * @throws {DatabaseError} If there's an error retrieving the last scanned block
 	 */
 	async getLastScannedBlock(): Promise<number> {
 		try {
@@ -202,7 +208,7 @@ export class EventService {
 				: Number(config.startBlock);
 		} catch (error) {
 			logger.error({ error }, "Error getting last scanned block");
-			throw error;
+			throw new DatabaseError("Failed to get last scanned block");
 		}
 	}
 }

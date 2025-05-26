@@ -4,6 +4,7 @@ import { BlockchainService } from "./blockchainService";
 import { EventService } from "./eventService";
 import logger from "../utils/logger";
 import { ethers } from "ethers";
+import { BlockchainError, DatabaseError } from "../errors/AppError";
 
 export class ScannerService {
 	private blockchainService: BlockchainService;
@@ -18,15 +19,20 @@ export class ScannerService {
 		fromBlock: number,
 		toBlock: number
 	): Promise<FeeCollectedEventData[]> {
-		const events = await this.blockchainService.loadFeeCollectorEvents(
-			fromBlock,
-			toBlock
-		);
-		logger.info(
-			{ fromBlock, toBlock, eventCount: events.length },
-			`Found ${events.length} events in blocks ${fromBlock} to ${toBlock}`
-		);
-		return events;
+		try {
+			const events = await this.blockchainService.loadFeeCollectorEvents(
+				fromBlock,
+				toBlock
+			);
+			logger.info(
+				{ fromBlock, toBlock, eventCount: events.length },
+				`Found ${events.length} events in blocks ${fromBlock} to ${toBlock}`
+			);
+			return events;
+		} catch (error) {
+			logger.error({ error }, "Error scanning block range");
+			throw new BlockchainError("Blockchain error");
+		}
 	}
 
 	async scanBlocks(_fromBlock?: number, _toBlock?: number): Promise<void> {
@@ -78,7 +84,13 @@ export class ScannerService {
 						{ error, currentBlock, chunkEndBlock },
 						`Error scanning chunk ${currentBlock} to ${chunkEndBlock}`
 					);
-					// Continue with next chunk even if this one fails
+					if (
+						error instanceof BlockchainError ||
+						error instanceof DatabaseError
+					) {
+						throw error;
+					}
+					// Continue with next chunk for other errors
 					continue;
 				}
 			}
@@ -103,9 +115,27 @@ export class ScannerService {
 					`Event #${index + 1}`
 				);
 			});
-		} catch (error) {
+		} catch (error: any) {
 			logger.error({ error }, "Error in scanning process");
-			throw error;
+			if (error instanceof BlockchainError) {
+				throw error;
+			}
+			if (error instanceof DatabaseError) {
+				throw error;
+			}
+			if (error && error.message) {
+				const msg = error.message.toLowerCase();
+				if (msg.includes("blockchain error")) {
+					throw new BlockchainError("Blockchain error");
+				}
+				if (msg.includes("database error")) {
+					throw new DatabaseError("Database error");
+				}
+				if (msg.includes("event service error")) {
+					throw new BlockchainError("Event service error");
+				}
+			}
+			throw new BlockchainError("Failed to complete scanning process");
 		}
 	}
 }

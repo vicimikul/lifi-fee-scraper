@@ -13,7 +13,17 @@ import {
 	beforeAll,
 	beforeEach,
 	afterAll,
+	jest,
 } from "@jest/globals";
+import logger from "../../../src/utils/logger";
+
+// Mock the logger
+jest.mock("../../../src/utils/logger", () => ({
+	info: jest.fn(),
+	error: jest.fn(),
+	warn: jest.fn(),
+	debug: jest.fn(),
+}));
 
 describe("EventService", () => {
 	let mongoServer: MongoMemoryServer;
@@ -62,8 +72,14 @@ describe("EventService", () => {
 
 			// Wait for the connection to be ready
 			await mongoose.connection.asPromise();
+
+			// Ensure indexes are created
+			await Promise.all([
+				FeeCollectedEventModel.createIndexes(),
+				LastScannedBlockModel.createIndexes(),
+			]);
 		} catch (error) {
-			console.error("Failed to setup test environment:", error);
+			logger.error({ error }, "Failed to setup test environment");
 			throw error;
 		}
 	}, 30000);
@@ -87,7 +103,7 @@ describe("EventService", () => {
 			]);
 			eventService = new EventService();
 		} catch (error) {
-			console.error("Failed to setup test:", error);
+			logger.error({ error }, "Failed to setup test");
 			throw error;
 		}
 	});
@@ -105,7 +121,7 @@ describe("EventService", () => {
 				await mongoServer.stop();
 			}
 		} catch (error) {
-			console.error("Failed to cleanup test environment:", error);
+			logger.error({ error }, "Failed to cleanup test environment");
 			throw error;
 		}
 	});
