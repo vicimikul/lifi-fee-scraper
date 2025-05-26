@@ -1,5 +1,12 @@
 import pino from "pino";
-import { config } from "../config";
+import { config } from "./config";
+
+/**
+ * logger.ts
+ *
+ * Pino-based logger instance for structured and pretty logging throughout the app.
+ * Log level and formatting are controlled by config.
+ */
 
 const logger = pino({
 	transport: {

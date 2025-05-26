@@ -2,7 +2,7 @@ import mongoose from "mongoose";
 import { ScannerService } from "../../src/services/scannerService";
 import { FeeCollectedEventModel } from "../../src/models/FeeCollectedEvent";
 import { LastScannedBlockModel } from "../../src/models/LastScannedBlock";
-import { config } from "../../src/config";
+import { config } from "../../src/utils/config";
 
 jest.setTimeout(10000);
 

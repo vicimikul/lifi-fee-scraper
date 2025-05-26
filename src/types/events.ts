@@ -1,6 +1,13 @@
 import { Event } from "ethers";
 
 /**
+ * events.ts
+ *
+ * TypeScript interfaces for representing LiFi FeeCollected event data
+ * and the DTO used for MongoDB storage.
+ */
+
+/**
  * Interface for raw event data from the blockchain
  */
 export interface FeeCollectedEventData extends Omit<Event, "args"> {

@@ -4,7 +4,7 @@ import { EventService } from "../../../src/services/eventService";
 import { FeeCollectedEventModel } from "../../../src/models/FeeCollectedEvent";
 import { LastScannedBlockModel } from "../../../src/models/LastScannedBlock";
 import { FeeCollectedEventData } from "../../../src/types/events";
-import { config } from "../../../src/config";
+import { config } from "../../../src/utils/config";
 import { providers } from "ethers";
 import {
 	describe,
@@ -29,22 +29,25 @@ describe("EventService", () => {
 	let mongoServer: MongoMemoryServer;
 	let eventService: EventService;
 
+	const validAddress = "0x" + "a".repeat(40); // 42 chars
+	const validTxHash = "0x" + "b".repeat(64); // 66 chars
+
 	// Sample test data with string values for fees
 	const mockEvent: FeeCollectedEventData = {
 		args: {
-			token: "0x123...",
-			integrator: "0x456...",
-			integratorFee: "1000000000000000000", // 1 ETH as string
-			lifiFee: "500000000000000000", // 0.5 ETH as string
+			token: validAddress,
+			integrator: validAddress,
+			integratorFee: "1000000000000000000",
+			lifiFee: "500000000000000000",
 		},
 		blockNumber: 1000,
-		transactionHash: "0x789...",
+		transactionHash: validTxHash,
 		logIndex: 0,
 		// Required Event properties
-		address: "0x123...",
+		address: validAddress,
 		topics: [],
 		data: "0x",
-		blockHash: "0xabc...",
+		blockHash: validTxHash,
 		transactionIndex: 0,
 		removed: false,
 		removeListener: () => {},

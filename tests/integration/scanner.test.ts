@@ -3,7 +3,7 @@ import { EventService } from "../../src/services/eventService";
 import { BlockchainService } from "../../src/services/blockchainService";
 import { FeeCollectedEventModel } from "../../src/models/FeeCollectedEvent";
 import { LastScannedBlockModel } from "../../src/models/LastScannedBlock";
-import { config } from "../../src/config";
+import { config } from "../../src/utils/config";
 import { FeeCollectedEventData } from "../../src/types/events";
 import mongoose from "mongoose";
 import { providers } from "ethers";

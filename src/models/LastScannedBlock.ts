@@ -1,6 +1,13 @@
 import { prop, getModelForClass, modelOptions } from "@typegoose/typegoose";
 
 /**
+ * LastScannedBlock.ts
+ *
+ * Mongoose model for tracking the last scanned block for each chain.
+ * Used to resume scanning from the correct block after restarts.
+ */
+
+/**
  * Model for the last scanned block
  */
 @modelOptions({

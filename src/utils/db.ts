@@ -1,9 +1,17 @@
 import mongoose from "mongoose";
-import logger from "./utils/logger";
+import logger from "./logger";
 
 /**
- * Connects to MongoDB
- * @param uri
+ * db.ts
+ *
+ * Utility functions for connecting and disconnecting from MongoDB.
+ * Handles logging and process exit on connection failure.
+ */
+
+/**
+ * Connects to MongoDB using the provided URI.
+ * Logs success or exits process on failure.
+ * @param uri - MongoDB connection string
  */
 export async function connectDB(uri: string): Promise<void> {
 	try {
@@ -16,7 +24,7 @@ export async function connectDB(uri: string): Promise<void> {
 }
 
 /**
- * Disconnects from MongoDB
+ * Disconnects from MongoDB and logs the result.
  */
 export async function disconnectDB(): Promise<void> {
 	try {

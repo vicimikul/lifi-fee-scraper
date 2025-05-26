@@ -1,5 +1,5 @@
 import logger from "../../../src/utils/logger";
-import { config } from "../../../src/config";
+import { config } from "../../../src/utils/config";
 import { describe, expect, it, beforeEach, jest } from "@jest/globals";
 
 // Mock pino

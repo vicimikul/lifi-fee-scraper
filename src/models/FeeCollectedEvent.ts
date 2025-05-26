@@ -7,6 +7,13 @@ import {
 } from "@typegoose/typegoose";
 
 /**
+ * FeeCollectedEvent.ts
+ *
+ * Mongoose model for storing LiFi FeeCollected events.
+ * Uses a compound unique index on transactionHash and logIndex for event uniqueness.
+ */
+
+/**
  * Model for the FeeCollectedEvent
  */
 @modelOptions({

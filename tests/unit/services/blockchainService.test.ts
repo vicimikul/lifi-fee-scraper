@@ -127,20 +127,22 @@ describe("BlockchainService", () => {
 	});
 
 	describe("loadFeeCollectorEvents", () => {
+		const validAddress = "0x" + "a".repeat(40); // 42 chars
+		const validTxHash = "0x" + "b".repeat(64); // 66 chars
 		const mockEvent: FeeCollectedEventData = {
 			args: {
-				token: "0x123...",
-				integrator: "0x456...",
-				integratorFee: "1000000000000000000", // 1 ETH
-				lifiFee: "500000000000000000", // 0.5 ETH
+				token: validAddress,
+				integrator: validAddress,
+				integratorFee: "1000000000000000000",
+				lifiFee: "500000000000000000",
 			},
 			blockNumber: 1000,
-			transactionHash: "0x789...",
+			transactionHash: validTxHash,
 			logIndex: 0,
-			address: "0x123...",
+			address: validAddress,
 			topics: [],
 			data: "0x",
-			blockHash: "0xabc...",
+			blockHash: validTxHash,
 			transactionIndex: 0,
 			removed: false,
 			removeListener: () => {},
@@ -261,21 +263,23 @@ describe("BlockchainService", () => {
 	});
 
 	describe("parseFeeCollectorEvents", () => {
+		const validAddress = "0x" + "a".repeat(40); // 42 chars
+		const validTxHash = "0x" + "b".repeat(64); // 66 chars
 		const mockEvents: FeeCollectedEventData[] = [
 			{
 				args: {
-					token: "0x123...",
-					integrator: "0x456...",
-					integratorFee: "1000000000000000000", // 1 ETH
-					lifiFee: "500000000000000000", // 0.5 ETH
+					token: validAddress,
+					integrator: validAddress,
+					integratorFee: "1000000000000000000",
+					lifiFee: "500000000000000000",
 				},
 				blockNumber: 1000,
-				transactionHash: "0x789...",
+				transactionHash: validTxHash,
 				logIndex: 0,
-				address: "0x123...",
+				address: validAddress,
 				topics: [],
 				data: "0x",
-				blockHash: "0xabc...",
+				blockHash: validTxHash,
 				transactionIndex: 0,
 				removed: false,
 				removeListener: () => {},
@@ -306,18 +310,18 @@ describe("BlockchainService", () => {
 			const malformedEvents: FeeCollectedEventData[] = [
 				{
 					args: {
-						token: "0x123...",
-						integrator: "0x456...",
+						token: validAddress,
+						integrator: validAddress,
 						integratorFee: "invalid",
 						lifiFee: "invalid",
 					},
 					blockNumber: 1000,
-					transactionHash: "0x789...",
+					transactionHash: validTxHash,
 					logIndex: 0,
-					address: "0x123...",
+					address: validAddress,
 					topics: [],
 					data: "0x",
-					blockHash: "0xabc...",
+					blockHash: validTxHash,
 					transactionIndex: 0,
 					removed: false,
 					removeListener: () => {},
@@ -338,18 +342,18 @@ describe("BlockchainService", () => {
 			const eventsWithDifferentFees: FeeCollectedEventData[] = [
 				{
 					args: {
-						token: "0x123...",
-						integrator: "0x456...",
-						integratorFee: "2000000000000000000", // 2 ETH
-						lifiFee: "1000000000000000000", // 1 ETH
+						token: validAddress,
+						integrator: validAddress,
+						integratorFee: "2000000000000000000",
+						lifiFee: "1000000000000000000",
 					},
 					blockNumber: 1000,
-					transactionHash: "0x789...",
+					transactionHash: validTxHash,
 					logIndex: 0,
-					address: "0x123...",
+					address: validAddress,
 					topics: [],
 					data: "0x",
-					blockHash: "0xabc...",
+					blockHash: validTxHash,
 					transactionIndex: 0,
 					removed: false,
 					removeListener: () => {},

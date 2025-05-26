@@ -2,7 +2,7 @@ import { ScannerService } from "../../../src/services/scannerService";
 import { BlockchainService } from "../../../src/services/blockchainService";
 import { EventService } from "../../../src/services/eventService";
 import { FeeCollectedEventData } from "../../../src/types/events";
-import { config } from "../../../src/config";
+import { config } from "../../../src/utils/config";
 import { providers } from "ethers";
 import { describe, expect, it, beforeEach, jest } from "@jest/globals";
 

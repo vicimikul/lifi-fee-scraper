@@ -1,4 +1,4 @@
-import { config } from "../config";
+import { config } from "../utils/config";
 import { FeeCollectedEventData } from "../types/events";
 import { BlockchainService } from "./blockchainService";
 import { EventService } from "./eventService";
@@ -6,15 +6,31 @@ import logger from "../utils/logger";
 import { ethers } from "ethers";
 import { BlockchainError, DatabaseError } from "../errors/AppError";
 
+/**
+ * ScannerService
+ *
+ * Orchestrates the scanning of blockchain blocks for LiFi fee events,
+ * chunking the scan, storing results, and updating progress in the database.
+ */
 export class ScannerService {
 	private blockchainService: BlockchainService;
 	private eventService: EventService;
 
+	/**
+	 * Initializes the scanner with blockchain and event services.
+	 */
 	constructor() {
 		this.blockchainService = new BlockchainService();
 		this.eventService = new EventService();
 	}
 
+	/**
+	 * Scan a specific block range for fee events.
+	 * @param fromBlock - Start block number (inclusive)
+	 * @param toBlock - End block number (inclusive)
+	 * @returns {Promise<FeeCollectedEventData[]>} Array of found events
+	 * @throws {BlockchainError} If the scan fails
+	 */
 	async scanBlockRange(
 		fromBlock: number,
 		toBlock: number
@@ -35,12 +51,19 @@ export class ScannerService {
 		}
 	}
 
+	/**
+	 * Scan blocks for fee events, chunking the scan to avoid provider limits.
+	 * Stores results and updates last scanned block in the database.
+	 * @param _fromBlock - Optional start block (overrides DB value)
+	 * @param _toBlock - Optional end block (overrides latest block)
+	 * @throws {BlockchainError|DatabaseError} If scanning or DB operations fail
+	 */
 	async scanBlocks(_fromBlock?: number, _toBlock?: number): Promise<void> {
 		try {
-			// Get the latest block number
+			// Get the latest block number from the blockchain
 			const latestBlock = await this.blockchainService.getLatestBlock();
 
-			// Get the last scanned block
+			// Get the last scanned block from the DB, or use override
 			const fromBlock = _fromBlock
 				? _fromBlock
 				: await this.eventService.getLastScannedBlock();
@@ -51,7 +74,7 @@ export class ScannerService {
 				`Scanning blocks from ${fromBlock} to ${toBlock}`
 			);
 
-			// Scan in chunks
+			// Scan in chunks to avoid provider limitations (e.g., 500 blocks per call)
 			let allEvents: FeeCollectedEventData[] = [];
 			for (
 				let currentBlock = fromBlock;
@@ -68,6 +91,7 @@ export class ScannerService {
 				);
 
 				try {
+					// Scan the current chunk for events
 					const chunkEvents = await this.scanBlockRange(
 						currentBlock,
 						chunkEndBlock
@@ -77,7 +101,7 @@ export class ScannerService {
 					// Store events in MongoDB
 					await this.eventService.storeEvents(chunkEvents);
 
-					// Update last scanned block
+					// Update last scanned block in DB
 					await this.eventService.updateLastScannedBlock(chunkEndBlock);
 				} catch (error) {
 					logger.error(
@@ -88,6 +112,7 @@ export class ScannerService {
 						error instanceof BlockchainError ||
 						error instanceof DatabaseError
 					) {
+						// Propagate known errors to be handled by the outer catch
 						throw error;
 					}
 					// Continue with next chunk for other errors
@@ -100,7 +125,7 @@ export class ScannerService {
 				`Total events found: ${allEvents.length}`
 			);
 
-			// Parse and log events
+			// Parse and log each event for display
 			const parsedEvents =
 				this.blockchainService.parseFeeCollectorEvents(allEvents);
 			parsedEvents.forEach((event: FeeCollectedEventData, index: number) => {
