@@ -1,22 +1,40 @@
 # LiFi Fee Scraper
 
-A tool for scraping and analyzing fees from LiFi protocol.
+A tool for scraping, storing and serving events from LiFi's fee collector smart contracts across multiple EVM networks.
 
-## Setup
+## Features
 
-1. Install dependencies:
+- Collect Fee Collected events from the LiFi smart contracts using ethers
+- Store events in MongoDB database
+- Store latest block for each chain in a separate collection
+- REST API endpoint to retrieve events related to a particular integrator
+- Unit, integration and e2e tests
+- Structured logging with Pino
+- Schema validation with Zod
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js 22
+- MongoDB
+- npm
+
+### Installation & Start
+
+Install dependencies:
 
 ```bash
 npm install
 ```
 
-2. Build the project:
+Build the project:
 
 ```bash
 npm run build
 ```
 
-3. Run the application:
+Run the application:
 
 ```bash
 npm start
@@ -24,7 +42,50 @@ npm start
 
 ## Development
 
-This project is built with TypeScript and uses Node.js. 
+### Project Structure
+
+```
+src/
+├── app.ts
+│
+├── controllers/
+│   └── eventsController.ts
+│
+├── errors/
+│   └── AppError.ts
+│
+├── middleware/
+│   └── requestLogger.ts
+│
+├── models/
+│   ├── FeeCollectedEvent.ts
+│   └── LastScannedBlock.ts
+│
+├── services/
+│   ├── blockchainService.ts
+│   ├── eventService.ts
+│   └── scannerService.ts
+│
+├── types/
+│   ├── events.ts
+│   └── schemas.ts
+│
+├── utils/
+│   ├── config.ts
+│   ├── db.ts
+│   ├── logger.ts
+```
+
+### Tech Stack
+
+- Typescript
+- Node.js
+- Express
+- MongoDB + Typegoose/Mongoose
+- Zod (validation)
+- Pino (logging)
+- ethers v5
+- jest & superterst
 
 ## Testing
 
@@ -145,15 +206,6 @@ Unit tests focus on testing individual components in isolation. Here's what we t
 - External services are mocked using Jest mock functions
 - Configuration is mocked for different test scenarios
 
-### Test Data
-
-Test data is stored in `tests/fixtures/` and includes:
-
-- Sample blockchain events
-- Database state snapshots
-- Configuration variations
-- Error scenarios
-
 ## License
 
-Private repository - All rights reserved
+Victor-Cristian Florea's personal work - All rights reserved
