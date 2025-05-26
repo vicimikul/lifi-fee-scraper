@@ -1,4 +1,4 @@
-import { FeeCollectedEventModel } from "../models/FeeCollectedEvent";
+import { FeeCollectedEvent, FeeCollectedEventModel } from "../models/FeeCollectedEvent";
 import { LastScannedBlockModel } from "../models/LastScannedBlock";
 import { FeeCollectedEventData, FeeCollectedEventDTO } from "../types/events";
 import { config } from "../utils/config";
@@ -233,5 +233,14 @@ export class EventService {
 			logger.error({ error }, "Error getting last scanned block");
 			throw new DatabaseError("Failed to get last scanned block");
 		}
+	}
+
+	async getEventsByIntegrator(
+		integrator: string
+	): Promise<FeeCollectedEvent[]> {
+		const events: FeeCollectedEvent[] = await FeeCollectedEventModel.find({
+			integrator,
+		}).lean();
+		return events;
 	}
 }

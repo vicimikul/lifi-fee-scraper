@@ -33,3 +33,8 @@ export interface FeeCollectedEventDTO {
 	transactionHash: string;
 	logIndex: number;
 }
+
+export interface FeeCollectedEvent extends FeeCollectedEventDTO {
+	createdAt: Date;
+	updatedAt: Date;
+}
