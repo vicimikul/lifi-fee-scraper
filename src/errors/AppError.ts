@@ -40,3 +40,13 @@ export class ConfigurationError extends AppError {
 		super(message);
 	}
 }
+
+export class ApiError extends AppError {
+	constructor(
+		public statusCode: number,
+		message: string,
+		public code?: string
+	) {
+		super(message);
+	}
+}

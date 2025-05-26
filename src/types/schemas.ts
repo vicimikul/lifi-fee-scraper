@@ -38,4 +38,12 @@ export const FeeCollectedEventDTOSchema = z.object({
 	logIndex: z.number().int().nonnegative(),
 });
 
+// Zod schema for validating the integrator address
+export const IntegratorParamSchema = z.object({
+	integrator: z
+		.string()
+		.length(42, "Invalid integrator address")
+		.regex(/^0x[a-fA-F0-9]{40}$/, "Invalid Ethereum address format"),
+});
+
 export type FeeCollectedEventParsed = z.infer<typeof FeeCollectedEventSchema>;
