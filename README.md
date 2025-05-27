@@ -26,7 +26,7 @@ A tool for scraping, storing and serving events from LiFi's fee collector smart 
 
 Once you have the dependencies above installed, create a .env file with a structure similar to the .env.example file. Key variables you will need: 
 - Production MongDB URI 
-- Testing MongoDB URI (I used a simple /test database as part of the same mongodb cluster)
+- Testing MongoDB URI with the database being called ***/test*** (since the integrations tests will replace "/test" with their particular naming and create new dbs, please use a db /test)
 - RPC URLs for the chains you want to work with 
 - Starting blocks for the chains you want to index (I already provided the ones for ETH and Polygon)
 - ENABLED_CHAINS - this is the key variable, as it sets the desired chains to index. You need to use chainIds separated by a comma, as shown in the example file
