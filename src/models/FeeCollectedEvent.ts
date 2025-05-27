@@ -10,7 +10,7 @@ import {
  * FeeCollectedEvent.ts
  *
  * Mongoose model for storing LiFi FeeCollected events.
- * Uses a compound unique index on transactionHash and logIndex for event uniqueness.
+ * Uses a compound unique index on chainId, transactionHash and logIndex for event uniqueness.
  */
 
 /**
@@ -25,18 +25,19 @@ import {
 		allowMixed: Severity.ALLOW, // Allow mixed types for certain fields if needed, or define specific types.
 	},
 })
-@index({ transactionHash: 1, logIndex: 1 }, { unique: true })
+@index({ chainId: 1, transactionHash: 1, logIndex: 1 }, { unique: true })
+@index({ integrator: 1, chainId: 1 }, { name: "integrator_chain_index" })
 export class FeeCollectedEvent {
-	@prop({ required: true, index: true })
+	@prop({ required: true })
 	public chainId!: number; // ChainId of the given network
 
 	@prop({ required: true })
 	public contractAddress!: string; // Address of the FeeCollector contract
 
-	@prop({ required: true, index: true })
+	@prop({ required: true })
 	public token!: string; // the address of the token that was collected
 
-	@prop({ required: true, index: true })
+	@prop({ required: true })
 	public integrator!: string; // the integrator that triggered the fee collection
 
 	// Store as string to prevent precision issues
@@ -47,7 +48,7 @@ export class FeeCollectedEvent {
 	@prop({ required: true, type: String })
 	public lifiFee!: string; // the share collected for lifi
 
-	@prop({ required: true, index: true })
+	@prop({ required: true })
 	public blockNumber!: number; // The block number where the event occurred
 
 	@prop({ required: true })

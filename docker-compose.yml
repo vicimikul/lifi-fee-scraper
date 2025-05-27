@@ -9,13 +9,16 @@ services:
       - "3000:3000"
     environment:
       - MONGO_URI=${MONGO_URI}
+      - ENABLED_CHAINS=${ENABLED_CHAINS}
+      - ETHEREUM_RPC_URL=${ETHEREUM_RPC_URL}
       - POLYGON_RPC_URL=${POLYGON_RPC_URL}
-      - CONTRACT_ADDRESS=${CONTRACT_ADDRESS}
+      - BASE_RPC_URL=${BASE_RPC_URL}
+      - BSC_RPC_URL=${BSC_RPC_URL}
+      - OPTIMISM_RPC_URL=${OPTIMISM_RPC_URL}
+      - GNOSIS_RPC_URL=${GNOSIS_RPC_URL}
       - PORT=${PORT:-3000}
       - LOG_LEVEL=${LOG_LEVEL:-info}
-      - START_BLOCK=${START_BLOCK:-0}
       - CHUNK_SIZE=${CHUNK_SIZE:-500}
-      - CHAIN_ID=${CHAIN_ID:-137}
       - NODE_ENV=production
     networks:
       - app-network

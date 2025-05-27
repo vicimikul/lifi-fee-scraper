@@ -44,8 +44,8 @@ app.use(errorHandler);
 const startScanner = async () => {
 	try {
 		// Initialize and run the scanner service to process blockchain events
-		const scannerService = new ScannerService();
-		await scannerService.scanBlocks();
+		const scannerService = ScannerService.getInstance();
+		await scannerService.scanAllChains();
 		logger.info("Scanner finished running");
 	} catch (error) {
 		logger.error({ error }, "Error in scanner process");

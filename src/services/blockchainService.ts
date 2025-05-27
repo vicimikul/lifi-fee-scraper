@@ -1,6 +1,7 @@
 import { ethers } from "ethers";
-import { FeeCollector__factory } from "lifi-contract-types";
 import { config } from "../utils/config";
+import { ChainIds } from "../types/chains";
+import { FeeCollector__factory } from "lifi-contract-types";
 import { FeeCollectedEventData } from "../types/events";
 import logger from "../utils/logger";
 import { BlockchainError, ValidationError } from "../errors/AppError";
@@ -14,51 +15,78 @@ import { ZodError } from "zod";
  * Handles provider setup, event querying, and event parsing.
  */
 export class BlockchainService {
-	private provider: ethers.providers.JsonRpcProvider;
-	private feeCollector: ethers.Contract;
+	private static instance: BlockchainService;
+	private providers: Map<ChainIds, ethers.providers.JsonRpcProvider>;
 
-	/**
-	 * Initializes the blockchain provider and contract instance.
-	 */
-	constructor() {
-		this.provider = new ethers.providers.JsonRpcProvider(config.polygonRpcUrl);
-		this.feeCollector = new ethers.Contract(
-			config.contractAddress,
-			FeeCollector__factory.createInterface(),
-			this.provider
-		);
+	private constructor() {
+		this.providers = new Map();
+	}
+
+	public static getInstance(): BlockchainService {
+		if (!BlockchainService.instance) {
+			BlockchainService.instance = new BlockchainService();
+		}
+		return BlockchainService.instance;
+	}
+
+	public getProvider(chainId: ChainIds): ethers.providers.JsonRpcProvider {
+		if (!this.providers.has(chainId)) {
+			const rpcUrl = config.chains[chainId].rpcUrl;
+			if (!rpcUrl) {
+				throw new Error(`No RPC URL configured for chain ${chainId}`);
+			}
+			this.providers.set(chainId, new ethers.providers.JsonRpcProvider(rpcUrl));
+		}
+		return this.providers.get(chainId)!;
 	}
 
 	/**
-	 * Fetch the latest block number from the blockchain.
-	 * @returns {Promise<number>} The latest block number.
-	 * @throws {BlockchainError} If the RPC call fails or times out.
+	 * Get contract instance for a specific chain
+	 * @param chainId - The chain ID to get the contract for
+	 * @returns Contract instance
 	 */
-	async getLatestBlock(): Promise<number> {
+	public getContract(chainId: ChainIds) {
+		const provider = this.getProvider(chainId);
+		const chainConfig = config.chains[chainId];
+		if (!chainConfig) {
+			throw new Error(`No configuration found for chain ${chainId}`);
+		}
+		return FeeCollector__factory.connect(config.contractAddress, provider);
+	}
+
+	/**
+	 * Get the latest block number for a specific chain
+	 * @param chainId - The chain ID to get the latest block for
+	 * @returns Latest block number
+	 */
+	public async getLatestBlock(chainId: ChainIds): Promise<number> {
 		try {
-			return await this.provider.getBlockNumber();
+			const provider = this.getProvider(chainId);
+			return await provider.getBlockNumber();
 		} catch (error: any) {
-			logger.error({ error }, "Error getting latest block");
-			if (
-				error &&
-				error.message &&
-				error.message.toLowerCase().includes("timeout")
-			) {
-				throw new BlockchainError("timeout");
+			logger.error({ chainId, error }, "Error getting latest block");
+			if (error?.message?.toLowerCase().includes("rpc error")) {
+				throw new BlockchainError("RPC error");
 			}
-			throw new BlockchainError("RPC connection failed");
+			if (error?.message?.toLowerCase().includes("network error")) {
+				throw new BlockchainError("Network error");
+			}
+			if (error?.message?.toLowerCase().includes("timeout")) {
+				throw new BlockchainError("Request timeout");
+			}
+			throw new BlockchainError("Failed to get latest block");
 		}
 	}
 
 	/**
 	 * Load all FeeCollected events from the blockchain in a given block range.
+	 * @param chainId - The chain ID to get events for
 	 * @param fromBlock - Start block number (inclusive)
 	 * @param toBlock - End block number (inclusive)
-	 * @returns {Promise<FeeCollectedEventData[]>} Array of parsed event data
-	 * @throws {ValidationError} If the block range is invalid
-	 * @throws {BlockchainError} If the RPC call fails
+	 * @returns Array of parsed event data
 	 */
 	async loadFeeCollectorEvents(
+		chainId: ChainIds,
 		fromBlock: number,
 		toBlock: number
 	): Promise<FeeCollectedEventData[]> {
@@ -69,19 +97,17 @@ export class BlockchainService {
 		}
 
 		try {
-			// Create the event filter for the FeeCollector contract
-			const filter = this.feeCollector.filters.FeesCollected();
+			const contract = this.getContract(chainId);
+			const filter = contract.filters.FeesCollected();
 
-			logger.debug({ fromBlock, toBlock }, "Querying blockchain for events");
-			const events = await this.feeCollector.queryFilter(
-				filter,
-				fromBlock,
-				toBlock
+			logger.debug(
+				{ chainId, fromBlock, toBlock },
+				"Querying blockchain for events"
 			);
+			const events = await contract.queryFilter(filter, fromBlock, toBlock);
 
-			// Parse each event log into a FeeCollectedEventData object
 			const parsedEvents = events.map((event) => {
-				const parsedEvent = this.feeCollector.interface.parseLog(event);
+				const parsedEvent = contract.interface.parseLog(event);
 				const eventObj = {
 					...event,
 					args: {
@@ -91,7 +117,6 @@ export class BlockchainService {
 						lifiFee: parsedEvent.args[3].toString(),
 					},
 				};
-				// Zod validation
 				try {
 					FeeCollectedEventSchema.parse(eventObj);
 				} catch (err) {
@@ -104,20 +129,22 @@ export class BlockchainService {
 			});
 
 			logger.debug(
-				{ eventCount: parsedEvents.length },
+				{ chainId, eventCount: parsedEvents.length },
 				"Successfully parsed events"
 			);
 			return parsedEvents;
 		} catch (error: any) {
-			logger.error({ error }, "Error loading fee collector events");
-			if (
-				error &&
-				error.message &&
-				error.message.toLowerCase().includes("rpc error")
-			) {
+			logger.error({ chainId, error }, "Error loading fee collector events");
+			if (error?.message?.toLowerCase().includes("rpc error")) {
 				throw new BlockchainError("RPC error");
 			}
-			throw new BlockchainError("RPC error");
+			if (error?.message?.toLowerCase().includes("network error")) {
+				throw new BlockchainError("Network error");
+			}
+			if (error?.message?.toLowerCase().includes("timeout")) {
+				throw new BlockchainError("Request timeout");
+			}
+			throw error;
 		}
 	}
 

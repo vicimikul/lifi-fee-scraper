@@ -1,86 +1,180 @@
-import { FeeCollectedEvent, FeeCollectedEventModel } from "../models/FeeCollectedEvent";
-import { LastScannedBlockModel } from "../models/LastScannedBlock";
+import {
+	FeeCollectedEvent,
+	FeeCollectedEventModel,
+} from "../models/FeeCollectedEvent";
 import { FeeCollectedEventData, FeeCollectedEventDTO } from "../types/events";
-import { config } from "../utils/config";
-import mongoose from "mongoose";
 import logger from "../utils/logger";
 import { DatabaseError, ValidationError } from "../errors/AppError";
+import { config } from "../utils/config";
+import mongoose from "mongoose";
 import {
 	FeeCollectedEventSchema,
 	FeeCollectedEventDTOSchema,
 } from "../types/schemas";
 import { ZodError } from "zod";
+import { ChainIds } from "../types/chains";
+import { LastScannedBlockModel } from "../models/LastScannedBlock";
 
 /**
- * EventService
- *
- * Service responsible for handling event-related database operations
- * including storing events and managing the last scanned block.
+ * Service responsible for handling event-related database operations.
+ * Manages the storage and retrieval of fee events and tracking of scanned blocks.
+ * Implements data validation, deduplication, and error handling for database operations.
  */
 export class EventService {
-	/**
-	 * Stores fee collection events in MongoDB.
-	 * Converts event data, checks for duplicates, validates, and inserts.
-	 * Uses transactions if available, falls back if not supported.
-	 * @param events - Array of FeeCollectedEventData to be stored
-	 * @throws {DatabaseError} If there's an error during the database operation
-	 * @throws {ValidationError} If event data is invalid
-	 */
-	async storeEvents(events: FeeCollectedEventData[]): Promise<void> {
-		// Convert raw event data to DTOs for MongoDB
-		const documents: FeeCollectedEventDTO[] = events.map((event) => {
-			const doc = {
-				chainId: config.chainId,
-				contractAddress: config.contractAddress,
-				token: event.args.token,
-				integrator: event.args.integrator,
-				integratorFee: event.args.integratorFee.toString(),
-				lifiFee: event.args.lifiFee.toString(),
-				blockNumber: event.blockNumber,
-				transactionHash: event.transactionHash,
-				logIndex: event.logIndex,
-			};
-			logger.debug(
-				{
-					originalIntegratorFee: event.args.integratorFee,
-					originalIntegratorFeeType: typeof event.args.integratorFee,
-					convertedIntegratorFee: doc.integratorFee,
-					convertedIntegratorFeeType: typeof doc.integratorFee,
-					originalLifiFee: event.args.lifiFee,
-					originalLifiFeeType: typeof event.args.lifiFee,
-					convertedLifiFee: doc.lifiFee,
-					convertedLifiFeeType: typeof doc.lifiFee,
-				},
-				"Converting event data for storage"
-			);
-			return doc;
-		});
+	private static instance: EventService;
 
-		if (documents.length === 0) return;
+	private constructor() {}
+
+	public static getInstance(): EventService {
+		if (!EventService.instance) {
+			EventService.instance = new EventService();
+		}
+		return EventService.instance;
+	}
+
+	/**
+	 * Retrieves the last scanned block number for a specific chain.
+	 * Falls back to the configured start block if no record exists.
+	 *
+	 * @param chainId - The chain ID to get the last scanned block for
+	 * @returns The last scanned block number
+	 * @throws {DatabaseError} When database operations fail
+	 */
+	async getLastScannedBlock(chainId: number): Promise<number> {
+		try {
+			const lastBlock = await LastScannedBlockModel.findOne({ chainId });
+			if (!lastBlock) {
+				const chainConfig = config.chains[chainId as ChainIds];
+				logger.info(
+					{ chainId },
+					`No last scanned block found, using config startBlock: ${
+						chainConfig?.startBlock || 0
+					}`
+				);
+				return chainConfig?.startBlock || 0;
+			}
+			logger.info(
+				{ chainId, blockNumber: lastBlock.blockNumber },
+				"Read last scanned block from DB"
+			);
+			return lastBlock.blockNumber;
+		} catch (error) {
+			logger.error({ chainId, error }, "Error getting last scanned block");
+			throw new DatabaseError("Failed to get last scanned block");
+		}
+	}
+
+	/**
+	 * Updates the last scanned block number for a specific chain.
+	 * Uses upsert to create or update the record.
+	 *
+	 * @param chainId - The chain ID to update
+	 * @param blockNumber - The new last scanned block number
+	 * @throws {DatabaseError} When database operations fail
+	 */
+	async updateLastScannedBlock(
+		chainId: number,
+		blockNumber: number
+	): Promise<void> {
+		if (blockNumber < 0) {
+			throw new ValidationError("Block number cannot be negative");
+		}
 
 		try {
-			// Check for existing events to avoid duplicates (compound index)
+			await LastScannedBlockModel.updateOne(
+				{ chainId },
+				{ $set: { blockNumber } },
+				{ upsert: true }
+			);
+			logger.info(
+				{ chainId, blockNumber },
+				"Upserted last scanned block in DB"
+			);
+		} catch (error) {
+			logger.error(
+				{ chainId, blockNumber, error },
+				"Error upserting last scanned block"
+			);
+			throw new DatabaseError("Failed to update last scanned block");
+		}
+	}
+
+	/**
+	 * Stores fee events in the database with deduplication.
+	 * Validates event data before storage and handles duplicate events.
+	 * Uses transactions when available for atomic operations.
+	 *
+	 * @param events - Array of events to store
+	 * @param chainId - The chain ID these events belong to
+	 * @throws {ValidationError} When event data is invalid
+	 * @throws {DatabaseError} When database operations fail
+	 */
+	async storeEvents(
+		events: FeeCollectedEventData[],
+		chainId: number
+	): Promise<void> {
+		if (events.length === 0) return;
+
+		// Convert raw event data to DTOs for MongoDB
+		const documents: FeeCollectedEventDTO[] = events.map((event) => ({
+			chainId,
+			contractAddress: event.address,
+			token: event.args.token,
+			integrator: event.args.integrator,
+			integratorFee: event.args.integratorFee.toString(),
+			lifiFee: event.args.lifiFee.toString(),
+			blockNumber: event.blockNumber,
+			transactionHash: event.transactionHash,
+			logIndex: event.logIndex,
+		}));
+
+		try {
+			// Check for existing events to avoid duplicates
 			const existingEvents = await FeeCollectedEventModel.find({
 				$or: documents.map((doc) => ({
-					$and: [
-						{ transactionHash: doc.transactionHash },
-						{ logIndex: doc.logIndex },
-					],
+					chainId,
+					transactionHash: doc.transactionHash,
+					logIndex: doc.logIndex,
 				})),
 			});
+
+			// Build a Set of unique keys for existing events
+			const existingKeys = new Set(
+				existingEvents.map(
+					(e) => `${e.chainId}_${e.transactionHash}_${e.logIndex}`
+				)
+			);
+
+			// Filter out duplicates from the insert list
+			const newDocuments = documents.filter(
+				(doc) =>
+					!existingKeys.has(
+						`${doc.chainId}_${doc.transactionHash}_${doc.logIndex}`
+					)
+			);
 
 			if (existingEvents.length > 0) {
 				logger.warn(
 					{
-						existingEvents: existingEvents.map((e) => ({
+						chainId,
+						duplicateEvents: existingEvents.map((e) => ({
 							transactionHash: e.transactionHash,
 							logIndex: e.logIndex,
 							blockNumber: e.blockNumber,
 							integratorFee: e.integratorFee,
 							lifiFee: e.lifiFee,
 						})),
+						totalAttempted: documents.length,
+						duplicateCount: existingEvents.length,
 					},
-					"Found existing events before insert"
+					"Duplicate events detected, will only insert non-duplicates"
+				);
+			}
+
+			if (newDocuments.length === 0) {
+				logger.info(
+					{ chainId },
+					"No new events to insert after duplicate filtering"
 				);
 				return;
 			}
@@ -98,7 +192,7 @@ export class EventService {
 			}
 
 			// Validate DTOs before insertion
-			for (const doc of documents) {
+			for (const doc of newDocuments) {
 				try {
 					FeeCollectedEventDTOSchema.parse(doc);
 				} catch (err) {
@@ -113,13 +207,13 @@ export class EventService {
 			try {
 				const session = await mongoose.startSession();
 				try {
-					const result = await FeeCollectedEventModel.insertMany(documents, {
+					const result = await FeeCollectedEventModel.insertMany(newDocuments, {
 						ordered: false,
 						session,
 					});
 					logger.debug(
 						{
-							insertedDocs: result.map((doc) => ({
+							insertedDocs: result.map((doc: FeeCollectedEvent) => ({
 								integratorFee: doc.integratorFee,
 								integratorFeeType: typeof doc.integratorFee,
 								lifiFee: doc.lifiFee,
@@ -131,12 +225,15 @@ export class EventService {
 				} catch (error: any) {
 					// If transaction fails due to non-replica set, try without transaction
 					if (error.message?.includes("Transaction numbers are only allowed")) {
-						const result = await FeeCollectedEventModel.insertMany(documents, {
-							ordered: false,
-						});
+						const result = await FeeCollectedEventModel.insertMany(
+							newDocuments,
+							{
+								ordered: false,
+							}
+						);
 						logger.debug(
 							{
-								insertedDocs: result.map((doc) => ({
+								insertedDocs: result.map((doc: FeeCollectedEvent) => ({
 									integratorFee: doc.integratorFee,
 									integratorFeeType: typeof doc.integratorFee,
 									lifiFee: doc.lifiFee,
@@ -152,35 +249,16 @@ export class EventService {
 					await session.endSession();
 				}
 			} catch (error: any) {
-				// Handle duplicate key errors (unique index)
-				if (error.code === 11000) {
-					logger.warn(
-						{
-							errorCode: error.code,
-							errorMessage: error.message,
-							duplicateKeys: error.writeErrors?.map((err: any) => ({
-								transactionHash: err.err.op.transactionHash,
-								logIndex: err.err.op.logIndex,
-								blockNumber: err.err.op.blockNumber,
-							})),
-							totalAttempted: documents.length,
-							duplicateCount: error.writeErrors?.length || 0,
-						},
-						"Duplicate events detected during transaction"
-					);
-					return; // Return early for duplicate events
-				} else {
-					logger.error({ error }, "Error storing events in MongoDB");
-					throw new DatabaseError("Failed to store events in database");
-				}
+				logger.error({ chainId, error }, "Error storing events in MongoDB");
+				throw new DatabaseError("Failed to store events in database");
 			}
 
 			logger.info(
-				{ count: documents.length },
-				`Successfully stored ${documents.length} events in MongoDB`
+				{ chainId, count: newDocuments.length },
+				`Successfully stored ${newDocuments.length} events in MongoDB`
 			);
 		} catch (error) {
-			logger.error({ error }, "Error storing events in MongoDB");
+			logger.error({ chainId, error }, "Error storing events in MongoDB");
 			if (error instanceof ValidationError) {
 				throw error;
 			}
@@ -189,58 +267,47 @@ export class EventService {
 	}
 
 	/**
-	 * Updates the last scanned block number in the database.
-	 * @param blockNumber - The block number to be stored as the last scanned block
-	 * @throws {ValidationError} If block number is invalid
-	 * @throws {DatabaseError} If there's an error updating the last scanned block
+	 * Retrieves all events for a specific chain.
+	 * Results are sorted by block number in ascending order.
+	 *
+	 * @param chainId - The chain ID to get events for
+	 * @returns Array of events
+	 * @throws {DatabaseError} When database operations fail
 	 */
-	async updateLastScannedBlock(blockNumber: number): Promise<void> {
-		if (blockNumber < 0) {
-			throw new ValidationError("Invalid block number");
-		}
-
+	async getEvents(chainId: number): Promise<FeeCollectedEvent[]> {
 		try {
-			await LastScannedBlockModel.findOneAndUpdate(
-				{ chainId: config.chainId },
-				{ blockNumber },
-				{ upsert: true }
-			);
-			logger.info(
-				{ blockNumber },
-				`Updated last scanned block to ${blockNumber}`
-			);
+			const events = await FeeCollectedEventModel.find({ chainId })
+				.sort({ blockNumber: 1 })
+				.lean();
+			return events;
 		} catch (error) {
-			logger.error({ error }, "Error updating last scanned block");
-			throw new DatabaseError("Failed to update last scanned block");
+			logger.error({ chainId, error }, "Error getting events");
+			throw new DatabaseError("Failed to get events");
 		}
 	}
 
 	/**
-	 * Retrieves the last scanned block number from the database.
-	 * Returns the configured start block if no record is found.
-	 * @returns {Promise<number>} The last scanned block number, or the start block if no block has been scanned
-	 * @throws {DatabaseError} If there's an error retrieving the last scanned block
+	 * Get events by integrator for a specific chain
+	 * @param chainId - The chain ID to get events for
+	 * @param integrator - The integrator address
+	 * @returns Array of events
 	 */
-	async getLastScannedBlock(): Promise<number> {
-		try {
-			const lastScannedBlock = await LastScannedBlockModel.findOne({
-				chainId: config.chainId,
-			});
-			return lastScannedBlock
-				? lastScannedBlock.blockNumber
-				: Number(config.startBlock);
-		} catch (error) {
-			logger.error({ error }, "Error getting last scanned block");
-			throw new DatabaseError("Failed to get last scanned block");
-		}
-	}
-
 	async getEventsByIntegrator(
+		chainId: number,
 		integrator: string
 	): Promise<FeeCollectedEvent[]> {
-		const events: FeeCollectedEvent[] = await FeeCollectedEventModel.find({
-			integrator,
-		}).lean();
-		return events;
+		try {
+			const events = await FeeCollectedEventModel.find({
+				chainId,
+				integrator,
+			}).lean();
+			return events;
+		} catch (error) {
+			logger.error(
+				{ chainId, integrator, error },
+				"Error getting events by integrator"
+			);
+			throw new DatabaseError("Failed to get events by integrator");
+		}
 	}
 }

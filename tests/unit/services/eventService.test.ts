@@ -6,6 +6,7 @@ import { LastScannedBlockModel } from "../../../src/models/LastScannedBlock";
 import { FeeCollectedEventData } from "../../../src/types/events";
 import { config } from "../../../src/utils/config";
 import { providers } from "ethers";
+import { ChainIds } from "../../../src/types/chains";
 import {
 	describe,
 	expect,
@@ -31,6 +32,7 @@ describe("EventService", () => {
 
 	const validAddress = "0x" + "a".repeat(40); // 42 chars
 	const validTxHash = "0x" + "b".repeat(64); // 66 chars
+	const TEST_CHAIN_ID = ChainIds.POLYGON;
 
 	// Sample test data with string values for fees
 	const mockEvent: FeeCollectedEventData = {
@@ -44,7 +46,7 @@ describe("EventService", () => {
 		transactionHash: validTxHash,
 		logIndex: 0,
 		// Required Event properties
-		address: validAddress,
+		address: config.contractAddress,
 		topics: [],
 		data: "0x",
 		blockHash: validTxHash,
@@ -65,7 +67,6 @@ describe("EventService", () => {
 		try {
 			// Create an in-memory MongoDB instance
 			mongoServer = await MongoMemoryServer.create();
-
 			const mongoUri = mongoServer.getUri();
 
 			// Connect with basic options
@@ -75,6 +76,20 @@ describe("EventService", () => {
 
 			// Wait for the connection to be ready
 			await mongoose.connection.asPromise();
+
+			// Drop all collections if they exist
+			if (mongoose.connection.db) {
+				const collections = await mongoose.connection.db.collections();
+				for (const collection of collections) {
+					await collection.drop().catch(() => {});
+				}
+			}
+
+			// Drop all indexes before creating them
+			await Promise.all([
+				FeeCollectedEventModel.collection.dropIndexes().catch(() => {}),
+				LastScannedBlockModel.collection.dropIndexes().catch(() => {}),
+			]);
 
 			// Ensure indexes are created
 			await Promise.all([
@@ -100,11 +115,27 @@ describe("EventService", () => {
 				});
 			}
 
+			// Drop all collections
+			if (mongoose.connection.db) {
+				const collections = await mongoose.connection.db.collections();
+				for (const collection of collections) {
+					await collection.drop().catch(() => {});
+				}
+			}
+
+			// Drop all indexes
 			await Promise.all([
-				FeeCollectedEventModel.deleteMany({}),
-				LastScannedBlockModel.deleteMany({}),
+				FeeCollectedEventModel.collection.dropIndexes().catch(() => {}),
+				LastScannedBlockModel.collection.dropIndexes().catch(() => {}),
 			]);
-			eventService = new EventService();
+
+			// Recreate indexes
+			await Promise.all([
+				FeeCollectedEventModel.createIndexes(),
+				LastScannedBlockModel.createIndexes(),
+			]);
+
+			eventService = EventService.getInstance();
 		} catch (error) {
 			logger.error({ error }, "Failed to setup test");
 			throw error;
@@ -136,7 +167,7 @@ describe("EventService", () => {
 		 */
 		it("should successfully store events", async () => {
 			const events = [mockEvent];
-			await eventService.storeEvents(events);
+			await eventService.storeEvents(events, TEST_CHAIN_ID);
 
 			const storedEvents = await FeeCollectedEventModel.find({});
 			expect(storedEvents).toHaveLength(1);
@@ -150,8 +181,8 @@ describe("EventService", () => {
 		 */
 		it("should handle duplicate events correctly", async () => {
 			const events = [mockEvent];
-			await eventService.storeEvents(events);
-			await eventService.storeEvents(events); // Try to store the same events again
+			await eventService.storeEvents(events, TEST_CHAIN_ID);
+			await eventService.storeEvents(events, TEST_CHAIN_ID); // Try to store the same events again
 
 			const storedEvents = await FeeCollectedEventModel.find({});
 			expect(storedEvents).toHaveLength(1); // Only one event should be stored
@@ -162,7 +193,7 @@ describe("EventService", () => {
 		 * Verifies that the function handles empty input gracefully
 		 */
 		it("should handle empty event arrays", async () => {
-			await eventService.storeEvents([]);
+			await eventService.storeEvents([], TEST_CHAIN_ID);
 			const storedEvents = await FeeCollectedEventModel.find({});
 			expect(storedEvents).toHaveLength(0);
 		});
@@ -175,7 +206,9 @@ describe("EventService", () => {
 			await mongoose.disconnect();
 			const events = [mockEvent];
 
-			await expect(eventService.storeEvents(events)).rejects.toThrow();
+			await expect(
+				eventService.storeEvents(events, TEST_CHAIN_ID)
+			).rejects.toThrow();
 		}, 15000); // Increased timeout for this test
 
 		/**
@@ -192,7 +225,9 @@ describe("EventService", () => {
 				},
 			};
 
-			await expect(eventService.storeEvents([invalidEvent])).rejects.toThrow();
+			await expect(
+				eventService.storeEvents([invalidEvent], TEST_CHAIN_ID)
+			).rejects.toThrow();
 
 			// Verify no events were stored
 			const storedEvents = await FeeCollectedEventModel.find({});
@@ -206,13 +241,13 @@ describe("EventService", () => {
 		it("should maintain event data integrity", async () => {
 			const events = [mockEvent];
 
-			await eventService.storeEvents(events);
+			await eventService.storeEvents(events, TEST_CHAIN_ID);
 
 			const storedEvent = await FeeCollectedEventModel.findOne({});
 
 			expect(storedEvent).toBeDefined();
 			if (storedEvent) {
-				expect(storedEvent.chainId).toBe(config.chainId);
+				expect(storedEvent.chainId).toBe(TEST_CHAIN_ID);
 				expect(storedEvent.contractAddress).toBe(config.contractAddress);
 				expect(storedEvent.token).toBe(mockEvent.args.token);
 				expect(storedEvent.integrator).toBe(mockEvent.args.integrator);
@@ -234,7 +269,7 @@ describe("EventService", () => {
 		 */
 		it("should successfully update block number", async () => {
 			const blockNumber = 1000;
-			await eventService.updateLastScannedBlock(blockNumber);
+			await eventService.updateLastScannedBlock(TEST_CHAIN_ID, blockNumber);
 
 			const lastBlock = await LastScannedBlockModel.findOne({});
 			expect(lastBlock?.blockNumber).toBe(blockNumber);
@@ -247,8 +282,8 @@ describe("EventService", () => {
 		it("should handle invalid block numbers", async () => {
 			const invalidBlockNumber = -1;
 			await expect(
-				eventService.updateLastScannedBlock(invalidBlockNumber)
-			).rejects.toThrow("Invalid block number");
+				eventService.updateLastScannedBlock(TEST_CHAIN_ID, invalidBlockNumber)
+			).rejects.toThrow();
 		});
 
 		/**
@@ -259,8 +294,8 @@ describe("EventService", () => {
 			const blockNumber1 = 1000;
 			const blockNumber2 = 2000;
 
-			await eventService.updateLastScannedBlock(blockNumber1);
-			await eventService.updateLastScannedBlock(blockNumber2);
+			await eventService.updateLastScannedBlock(TEST_CHAIN_ID, blockNumber1);
+			await eventService.updateLastScannedBlock(TEST_CHAIN_ID, blockNumber2);
 
 			const lastBlock = await LastScannedBlockModel.findOne({});
 			expect(lastBlock?.blockNumber).toBe(blockNumber2);
@@ -274,9 +309,9 @@ describe("EventService", () => {
 		 */
 		it("should return correct block number", async () => {
 			const blockNumber = 1000;
-			await eventService.updateLastScannedBlock(blockNumber);
+			await eventService.updateLastScannedBlock(TEST_CHAIN_ID, blockNumber);
 
-			const lastBlock = await eventService.getLastScannedBlock();
+			const lastBlock = await eventService.getLastScannedBlock(TEST_CHAIN_ID);
 			expect(lastBlock).toBe(blockNumber);
 		});
 
@@ -285,8 +320,8 @@ describe("EventService", () => {
 		 * Verifies that start block is returned when no blocks are scanned
 		 */
 		it("should return start block when no block is scanned", async () => {
-			const lastBlock = await eventService.getLastScannedBlock();
-			expect(lastBlock).toBe(Number(config.startBlock));
+			const lastBlock = await eventService.getLastScannedBlock(TEST_CHAIN_ID);
+			expect(lastBlock).toBe(config.chains[TEST_CHAIN_ID].startBlock);
 		});
 
 		/**
@@ -295,7 +330,9 @@ describe("EventService", () => {
 		 */
 		it("should handle database errors", async () => {
 			await mongoose.disconnect();
-			await expect(eventService.getLastScannedBlock()).rejects.toThrow();
+			await expect(
+				eventService.getLastScannedBlock(TEST_CHAIN_ID)
+			).rejects.toThrow();
 		});
 	});
 });

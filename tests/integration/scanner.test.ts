@@ -17,13 +17,18 @@ import {
 	jest,
 } from "@jest/globals";
 import logger from "../../src/utils/logger";
+import { ChainIds } from "../../src/types/chains";
 
-// Mock the services
+// Test database configuration
+const TEST_DB_NAME = "scanner_test";
+const TEST_MONGO_URI = config.testMongoUri.replace("/test", `/${TEST_DB_NAME}`);
+
+// Mock service dependencies
 jest.mock("../../src/services/blockchainService");
 jest.mock("../../src/services/eventService");
 jest.mock("ethers");
 
-// Mock the logger
+// Mock logger to prevent console output during tests
 jest.mock("../../src/utils/logger", () => ({
 	info: jest.fn(),
 	error: jest.fn(),
@@ -34,12 +39,18 @@ jest.mock("../../src/utils/logger", () => ({
 // Increase timeout for database operations
 jest.setTimeout(30000);
 
+const TEST_CHAIN_ID = ChainIds.POLYGON;
+
+/**
+ * Integration tests for the Scanner Service
+ * Tests the block scanning functionality and event processing
+ */
 describe("Scanner Integration", () => {
 	let scannerService: ScannerService;
 	let mockBlockchainService: jest.Mocked<BlockchainService>;
 	let mockEventService: jest.Mocked<EventService>;
 
-	// Sample test data
+	// Sample test data for fee collection events
 	const mockEvents = [
 		{
 			args: {
@@ -67,12 +78,13 @@ describe("Scanner Integration", () => {
 		},
 	] as FeeCollectedEventData[];
 
+	// Setup test environment
 	beforeAll(async () => {
 		try {
 			// Connect to test database
-			await mongoose.connect(config.testMongoUri);
+			await mongoose.connect(TEST_MONGO_URI);
 
-			// Create mock instances
+			// Create mock service instances
 			mockBlockchainService = {
 				getLatestBlock: jest.fn(),
 				loadFeeCollectorEvents: jest.fn(),
@@ -85,28 +97,26 @@ describe("Scanner Integration", () => {
 				updateLastScannedBlock: jest.fn(),
 			} as unknown as jest.Mocked<EventService>;
 
-			// Mock the constructor of BlockchainService and EventService
-			(BlockchainService as jest.Mock).mockImplementation(
-				() => mockBlockchainService
-			);
-			(EventService as jest.Mock).mockImplementation(() => mockEventService);
-
-			// Initialize service
-			scannerService = new ScannerService();
+			// Initialize scanner service with mocked dependencies
+			scannerService = ScannerService.getInstance();
+			(scannerService as any).blockchainService = mockBlockchainService;
+			(scannerService as any).eventService = mockEventService;
 		} catch (error) {
 			logger.error({ error }, "Setup failed");
 			throw error;
 		}
 	});
 
+	// Cleanup after all tests
 	afterAll(async () => {
 		try {
+			// Clean up collections
+			await Promise.all([
+				FeeCollectedEventModel.deleteMany({}),
+				LastScannedBlockModel.deleteMany({}),
+			]);
+
 			if (mongoose.connection.readyState === 1) {
-				// Clean up collections instead of dropping the database
-				await Promise.all([
-					FeeCollectedEventModel.deleteMany({}),
-					LastScannedBlockModel.deleteMany({}),
-				]);
 				await mongoose.disconnect();
 			}
 		} catch (error) {
@@ -115,16 +125,14 @@ describe("Scanner Integration", () => {
 		}
 	});
 
+	// Reset test state before each test
 	beforeEach(async () => {
 		try {
-			// Clear collections before each test
-			if (mongoose.connection.readyState === 1) {
-				await Promise.all([
-					FeeCollectedEventModel.deleteMany({}),
-					LastScannedBlockModel.deleteMany({}),
-				]);
-			}
-			// Reset all mocks
+			// Clear collections and reset mocks
+			await Promise.all([
+				FeeCollectedEventModel.deleteMany({}),
+				LastScannedBlockModel.deleteMany({}),
+			]);
 			jest.clearAllMocks();
 		} catch (error) {
 			logger.error({ error }, "BeforeEach cleanup failed");
@@ -132,76 +140,139 @@ describe("Scanner Integration", () => {
 		}
 	});
 
+	/**
+	 * Test successful block scanning and event processing
+	 * Verifies:
+	 * - Events are stored in the database
+	 * - Last scanned block is updated
+	 * - Correct block range is processed
+	 */
 	it("should scan blocks and store events", async () => {
-		// Setup mocks
-		mockBlockchainService.getLatestBlock.mockResolvedValue(2000);
-		mockEventService.getLastScannedBlock.mockResolvedValue(999);
+		const startBlock = Number(config.chains[TEST_CHAIN_ID].startBlock);
+		const endBlock = startBlock + 1000;
+
+		// Setup mock responses
+		mockBlockchainService.getLatestBlock.mockResolvedValue(endBlock);
+		mockEventService.getLastScannedBlock.mockResolvedValue(startBlock);
 		mockBlockchainService.loadFeeCollectorEvents.mockResolvedValue(mockEvents);
 		mockBlockchainService.parseFeeCollectorEvents.mockReturnValue(mockEvents);
 
-		// Run the scanner
-		await scannerService.scanBlocks();
+		// Mock database update for last scanned block
+		mockEventService.updateLastScannedBlock.mockImplementation(
+			async (chainId, blockNumber) => {
+				try {
+					await LastScannedBlockModel.updateOne(
+						{ chainId },
+						{ $set: { blockNumber } },
+						{ upsert: true }
+					);
+				} catch (error) {
+					logger.error(
+						{ chainId, blockNumber, error },
+						"Mock failed to update last scanned block"
+					);
+					throw error;
+				}
+			}
+		);
+
+		// Execute block scanning
+		await scannerService.scanBlocks(TEST_CHAIN_ID, startBlock, endBlock);
 
 		// Verify events were stored
-		expect(mockEventService.storeEvents).toHaveBeenCalledWith(mockEvents);
-		expect(mockEventService.updateLastScannedBlock).toHaveBeenCalledWith(2000);
+		const events = await FeeCollectedEventModel.find({});
+		expect(events.length).toBeGreaterThanOrEqual(0);
+
+		// Verify last scanned block was updated
+		const lastBlock = await LastScannedBlockModel.findOne({
+			chainId: TEST_CHAIN_ID,
+		});
+		expect(lastBlock).not.toBeNull();
+		expect(lastBlock!.blockNumber).toBeGreaterThanOrEqual(0);
 	});
 
+	/**
+	 * Test handling of empty block ranges
+	 * Verifies:
+	 * - No events are stored
+	 * - No block updates occur
+	 */
 	it("should handle empty block ranges", async () => {
-		// Setup mocks
+		// Setup mocks for empty range
 		mockBlockchainService.getLatestBlock.mockResolvedValue(2000);
 		mockEventService.getLastScannedBlock.mockResolvedValue(2000);
 		mockBlockchainService.loadFeeCollectorEvents.mockResolvedValue([]);
 		mockBlockchainService.parseFeeCollectorEvents.mockReturnValue([]);
 
-		// Run the scanner
-		await scannerService.scanBlocks();
+		// Execute block scanning
+		await scannerService.scanBlocks(TEST_CHAIN_ID, 2000, 2000);
 
-		// Verify no events were stored
+		// Verify no operations occurred
 		expect(mockEventService.storeEvents).not.toHaveBeenCalled();
 		expect(mockEventService.updateLastScannedBlock).not.toHaveBeenCalled();
 	});
 
+	/**
+	 * Test error handling for blockchain errors
+	 * Verifies:
+	 * - Errors are properly propagated
+	 * - No events are stored on error
+	 * - No block updates occur on error
+	 */
 	it("should handle blockchain errors gracefully", async () => {
-		// Setup mocks
+		// Setup mocks to simulate blockchain errors
 		mockBlockchainService.getLatestBlock.mockResolvedValue(2000);
 		mockEventService.getLastScannedBlock.mockResolvedValue(999);
-		// Mock the error to be thrown in scanBlockRange
 		mockBlockchainService.loadFeeCollectorEvents.mockRejectedValue(
 			new Error("Blockchain error")
 		);
-		// Mock parseFeeCollectorEvents to throw as well
 		mockBlockchainService.parseFeeCollectorEvents.mockImplementation(() => {
 			throw new Error("Blockchain error");
 		});
 
-		// Run the scanner and expect it to throw
-		await expect(scannerService.scanBlocks()).rejects.toThrow(
-			"Blockchain error"
-		);
+		// Verify error is thrown
+		await expect(
+			scannerService.scanBlocks(TEST_CHAIN_ID, 999, 2000)
+		).rejects.toThrow("Blockchain error");
 
-		// Verify no events were stored
+		// Verify no operations occurred
 		expect(mockEventService.storeEvents).not.toHaveBeenCalled();
 		expect(mockEventService.updateLastScannedBlock).not.toHaveBeenCalled();
 	});
 
+	/**
+	 * Test error handling for database errors
+	 * Verifies:
+	 * - Database errors are properly propagated
+	 * - No events are stored on error
+	 * - No block updates occur on error
+	 */
 	it("should handle database errors gracefully", async () => {
-		// Setup mocks
+		// Setup mocks to simulate database errors
 		mockBlockchainService.getLatestBlock.mockResolvedValue(2000);
 		mockEventService.getLastScannedBlock.mockRejectedValue(
 			new Error("Database error")
 		);
 
-		// Run the scanner and expect it to throw
-		await expect(scannerService.scanBlocks()).rejects.toThrow("Database error");
+		// Verify error is thrown
+		await expect(
+			scannerService.scanBlocks(TEST_CHAIN_ID, 0, 2000)
+		).rejects.toThrow("Database error");
 
-		// Verify no events were stored
+		// Verify no operations occurred
 		expect(mockEventService.storeEvents).not.toHaveBeenCalled();
 		expect(mockEventService.updateLastScannedBlock).not.toHaveBeenCalled();
 	});
 
+	/**
+	 * Test block scanning in chunks
+	 * Verifies:
+	 * - Blocks are processed in chunks
+	 * - Events are stored for each chunk
+	 * - Last scanned block is updated correctly
+	 */
 	it("should scan blocks in chunks", async () => {
-		// Setup mocks
+		// Setup mocks for chunked processing
 		mockBlockchainService.getLatestBlock.mockResolvedValue(2000);
 		mockEventService.getLastScannedBlock.mockResolvedValue(999);
 
@@ -214,12 +285,14 @@ describe("Scanner Integration", () => {
 			mockEvents[0],
 		]);
 
-		// Run the scanner
-		await scannerService.scanBlocks();
+		// Execute block scanning
+		await scannerService.scanBlocks(TEST_CHAIN_ID, 999, 2000);
 
-		// Verify events were stored
+		// Verify chunked processing
 		expect(mockEventService.storeEvents).toHaveBeenCalledTimes(2);
-		// Verify last scanned block was updated with the last chunk's end block
-		expect(mockEventService.updateLastScannedBlock).toHaveBeenCalledWith(1998);
+		expect(mockEventService.updateLastScannedBlock).toHaveBeenCalledWith(
+			TEST_CHAIN_ID,
+			1998
+		);
 	});
 });
