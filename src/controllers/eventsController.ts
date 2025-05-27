@@ -9,9 +9,11 @@ import { EventService } from "../services/eventService";
 import logger from "../utils/logger";
 import { FeeCollectedEvent } from "../types/events";
 import { IntegratorParamSchema } from "../types/schemas";
+import { ChainIds } from "../types/chains";
+
 /**
  * Controller to handle retrieving all collected events for a given integrator.
- * GET /events/integrator/:integrator
+ * GET /events/integrator/:chainId/:integrator
  */
 export const getEventsByIntegrator: RequestHandler = async (
 	req: Request,
@@ -19,7 +21,7 @@ export const getEventsByIntegrator: RequestHandler = async (
 	next: NextFunction
 ) => {
 	try {
-		// Validate the integrator address from params using safeParse
+		// Validate the integrator address and chainId from params
 		const result = IntegratorParamSchema.safeParse(req.params);
 		if (!result.success) {
 			res.status(400).json({
@@ -29,13 +31,25 @@ export const getEventsByIntegrator: RequestHandler = async (
 			return;
 		}
 		const { integrator } = result.data;
+		const chainId = parseInt(req.params.chainId, 10);
 
-		// Query the database for events with the given integrator
-		const eventService = new EventService();
+		// Validate chainId
+		if (!Object.values(ChainIds).includes(chainId)) {
+			res.status(400).json({
+				success: false,
+				error: `Invalid chain ID. Supported chains: ${Object.values(ChainIds)
+					.filter((id) => typeof id === "number")
+					.join(", ")}`,
+			});
+			return;
+		}
+
+		// Query the database for events with the given integrator and chain
+		const eventService = EventService.getInstance();
 		const events: FeeCollectedEvent[] =
-			await eventService.getEventsByIntegrator(integrator);
+			await eventService.getEventsByIntegrator(chainId, integrator);
 		logger.info(
-			{ integrator, count: events.length },
+			{ chainId, integrator, count: events.length },
 			"Fetched events for integrator"
 		);
 		res.json({
@@ -55,7 +69,7 @@ export const getEventsByIntegrator: RequestHandler = async (
 // Express router setup
 const router = Router();
 
-// GET /integrator/:integrator
-router.get("/integrator/:integrator", getEventsByIntegrator);
+// GET /integrator/:chainId/:integrator
+router.get("/integrator/:chainId/:integrator", getEventsByIntegrator);
 
 export default router;

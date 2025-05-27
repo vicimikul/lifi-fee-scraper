@@ -1,41 +1,60 @@
 import request from "supertest";
 import express from "express";
 import mongoose from "mongoose";
-import { MongoMemoryServer } from "mongodb-memory-server";
+import { config } from "../../src/utils/config";
 import eventsRouter from "../../src/controllers/eventsController";
 import { FeeCollectedEventModel } from "../../src/models/FeeCollectedEvent";
 
+// Test database configuration
+const TEST_DB_NAME = "eventsapi_test";
+const TEST_MONGO_URI = config.testMongoUri.replace("/test", `/${TEST_DB_NAME}`);
+
+// Test data constants
 const validAddress = "0x" + "a".repeat(40); // 42 chars
 const anotherAddress = "0x" + "b".repeat(40); // 42 chars
 const validTxHash = "0x" + "c".repeat(64); // 66 chars
 
+/**
+ * Integration tests for the Events API endpoints
+ * Tests the /events/integrator/:chainId/:integrator endpoint
+ */
 describe("GET /events/integrator/:integrator", () => {
-	let mongoServer: MongoMemoryServer;
 	let app: express.Express;
 
+	// Setup test environment
 	beforeAll(async () => {
-		mongoServer = await MongoMemoryServer.create();
-		await mongoose.connect(mongoServer.getUri(), {
+		// Connect to test database
+		await mongoose.connect(TEST_MONGO_URI, {
 			serverSelectionTimeoutMS: 5000,
 		});
+		// Initialize Express app with events router
 		app = express();
 		app.use(express.json());
 		app.use("/events", eventsRouter);
 	});
 
+	// Cleanup after all tests
 	afterAll(async () => {
 		await mongoose.disconnect();
-		await mongoServer.stop();
 	});
 
+	// Reset database state before each test
 	beforeEach(async () => {
 		await FeeCollectedEventModel.deleteMany({});
 	});
 
+	/**
+	 * Test successful retrieval of events for a valid integrator address
+	 * Verifies:
+	 * - Correct HTTP status code
+	 * - Response structure
+	 * - Event filtering by integrator
+	 * - Metadata presence
+	 */
 	it("should return events for a valid integrator", async () => {
-		// Insert test data
+		// Create test events in the database
 		await FeeCollectedEventModel.create({
-			chainId: 1,
+			chainId: 137,
 			contractAddress: validAddress,
 			token: validAddress,
 			integrator: validAddress,
@@ -46,7 +65,7 @@ describe("GET /events/integrator/:integrator", () => {
 			logIndex: 0,
 		});
 		await FeeCollectedEventModel.create({
-			chainId: 1,
+			chainId: 137,
 			contractAddress: validAddress,
 			token: validAddress,
 			integrator: anotherAddress,
@@ -57,7 +76,12 @@ describe("GET /events/integrator/:integrator", () => {
 			logIndex: 1,
 		});
 
-		const res = await request(app).get(`/events/integrator/${validAddress}`);
+		// Make request to the API
+		const res = await request(app).get(
+			`/events/integrator/137/${validAddress}`
+		);
+
+		// Verify response structure and content
 		expect(res.status).toBe(200);
 		expect(res.body.success).toBe(true);
 		expect(res.body.data).toBeDefined();
@@ -70,15 +94,29 @@ describe("GET /events/integrator/:integrator", () => {
 		expect(res.body.meta.timestamp).toBeDefined();
 	});
 
+	/**
+	 * Test error handling for invalid integrator address
+	 * Verifies:
+	 * - Correct error status code
+	 * - Error message format
+	 */
 	it("should return 400 for invalid integrator address", async () => {
-		const res = await request(app).get(`/events/integrator/invalidaddress`);
+		const res = await request(app).get(`/events/integrator/137/invalidaddress`);
 		expect(res.status).toBe(400);
 		expect(res.body.success).toBe(false);
 		expect(res.body.error).toMatch(/Invalid integrator address/);
 	});
 
+	/**
+	 * Test handling of non-existent integrator
+	 * Verifies:
+	 * - Successful response with empty results
+	 * - Correct metadata for empty result set
+	 */
 	it("should return empty array if no events for integrator", async () => {
-		const res = await request(app).get(`/events/integrator/${anotherAddress}`);
+		const res = await request(app).get(
+			`/events/integrator/137/${anotherAddress}`
+		);
 		expect(res.status).toBe(200);
 		expect(res.body.success).toBe(true);
 		expect(res.body.data).toBeDefined();

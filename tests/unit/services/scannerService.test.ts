@@ -5,10 +5,13 @@ import { FeeCollectedEventData } from "../../../src/types/events";
 import { config } from "../../../src/utils/config";
 import { providers } from "ethers";
 import { describe, expect, it, beforeEach, jest } from "@jest/globals";
+import { ChainIds } from "../../../src/types/chains";
 
 // Mock the services
 jest.mock("../../../src/services/blockchainService");
 jest.mock("../../../src/services/eventService");
+
+const TEST_CHAIN_ID = ChainIds.POLYGON;
 
 describe("ScannerService", () => {
 	let scannerService: ScannerService;
@@ -55,14 +58,10 @@ describe("ScannerService", () => {
 			updateLastScannedBlock: jest.fn(),
 		} as unknown as jest.Mocked<EventService>;
 
-		// Mock the constructor of BlockchainService and EventService
-		(BlockchainService as jest.Mock).mockImplementation(
-			() => mockBlockchainService
-		);
-		(EventService as jest.Mock).mockImplementation(() => mockEventService);
-
 		// Create service instance
-		scannerService = new ScannerService();
+		scannerService = ScannerService.getInstance();
+		(scannerService as any).blockchainService = mockBlockchainService;
+		(scannerService as any).eventService = mockEventService;
 	});
 
 	describe("scanBlockRange", () => {
@@ -75,10 +74,15 @@ describe("ScannerService", () => {
 				mockEvents
 			);
 
-			const events = await scannerService.scanBlockRange(fromBlock, toBlock);
+			const events = await scannerService.scanBlockRange(
+				TEST_CHAIN_ID,
+				fromBlock,
+				toBlock
+			);
 
 			expect(events).toEqual(mockEvents);
 			expect(mockBlockchainService.loadFeeCollectorEvents).toHaveBeenCalledWith(
+				TEST_CHAIN_ID,
 				fromBlock,
 				toBlock
 			);
@@ -90,10 +94,15 @@ describe("ScannerService", () => {
 
 			mockBlockchainService.loadFeeCollectorEvents.mockResolvedValue([]);
 
-			const events = await scannerService.scanBlockRange(fromBlock, toBlock);
+			const events = await scannerService.scanBlockRange(
+				TEST_CHAIN_ID,
+				fromBlock,
+				toBlock
+			);
 
 			expect(events).toHaveLength(0);
 			expect(mockBlockchainService.loadFeeCollectorEvents).toHaveBeenCalledWith(
+				TEST_CHAIN_ID,
 				fromBlock,
 				toBlock
 			);
@@ -108,7 +117,7 @@ describe("ScannerService", () => {
 			);
 
 			await expect(
-				scannerService.scanBlockRange(fromBlock, toBlock)
+				scannerService.scanBlockRange(TEST_CHAIN_ID, fromBlock, toBlock)
 			).rejects.toThrow("Blockchain error");
 		});
 	});
@@ -126,7 +135,7 @@ describe("ScannerService", () => {
 			);
 			mockBlockchainService.parseFeeCollectorEvents.mockReturnValue(mockEvents);
 
-			await scannerService.scanBlocks();
+			await scannerService.scanBlocks(TEST_CHAIN_ID);
 
 			// Verify the scan was performed in chunks
 			expect(
@@ -136,10 +145,14 @@ describe("ScannerService", () => {
 			);
 
 			// Verify events were stored
-			expect(mockEventService.storeEvents).toHaveBeenCalledWith(mockEvents);
+			expect(mockEventService.storeEvents).toHaveBeenCalledWith(
+				mockEvents,
+				TEST_CHAIN_ID
+			);
 
 			// Verify last scanned block was updated
 			expect(mockEventService.updateLastScannedBlock).toHaveBeenCalledWith(
+				TEST_CHAIN_ID,
 				expect.any(Number)
 			);
 		});
@@ -153,7 +166,7 @@ describe("ScannerService", () => {
 			// Mock parseFeeCollectorEvents to return empty array instead of undefined
 			mockBlockchainService.parseFeeCollectorEvents.mockReturnValue([]);
 
-			await scannerService.scanBlocks();
+			await scannerService.scanBlocks(TEST_CHAIN_ID);
 
 			expect(
 				mockBlockchainService.loadFeeCollectorEvents
@@ -177,13 +190,16 @@ describe("ScannerService", () => {
 			// Mock parseFeeCollectorEvents to return the events
 			mockBlockchainService.parseFeeCollectorEvents.mockReturnValue(mockEvents);
 
-			await scannerService.scanBlocks();
+			await scannerService.scanBlocks(TEST_CHAIN_ID);
 
 			// Verify we continued scanning despite the error
 			expect(
 				mockBlockchainService.loadFeeCollectorEvents
 			).toHaveBeenCalledTimes(2);
-			expect(mockEventService.storeEvents).toHaveBeenCalledWith(mockEvents);
+			expect(mockEventService.storeEvents).toHaveBeenCalledWith(
+				mockEvents,
+				TEST_CHAIN_ID
+			);
 		});
 
 		it("should handle blockchain service errors", async () => {
@@ -191,7 +207,7 @@ describe("ScannerService", () => {
 				new Error("Blockchain error")
 			);
 
-			await expect(scannerService.scanBlocks()).rejects.toThrow(
+			await expect(scannerService.scanBlocks(TEST_CHAIN_ID)).rejects.toThrow(
 				"Blockchain error"
 			);
 		});
@@ -205,7 +221,7 @@ describe("ScannerService", () => {
 				new Error("Event service error")
 			);
 
-			await expect(scannerService.scanBlocks()).rejects.toThrow(
+			await expect(scannerService.scanBlocks(TEST_CHAIN_ID)).rejects.toThrow(
 				"Event service error"
 			);
 		});

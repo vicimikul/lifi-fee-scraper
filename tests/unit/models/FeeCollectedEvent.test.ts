@@ -84,7 +84,7 @@ describe("FeeCollectedEvent Model", () => {
 		await expect(FeeCollectedEventModel.create(eventData)).rejects.toThrow();
 	});
 
-	it("should enforce unique constraint on transactionHash and logIndex", async () => {
+	it("should enforce unique constraint on chainId, transactionHash and logIndex", async () => {
 		const eventData = {
 			chainId: 1,
 			contractAddress: "0x1234567890123456789012345678901234567890",
@@ -101,15 +101,22 @@ describe("FeeCollectedEvent Model", () => {
 		// Create first event
 		await FeeCollectedEventModel.create(eventData);
 
-		// Try to create second event with same transactionHash and logIndex
+		// Try to create second event with same chainId, transactionHash and logIndex
 		await expect(
 			FeeCollectedEventModel.create({
 				...eventData,
-				// Change other fields to ensure only transactionHash and logIndex are checked
-				chainId: 2,
+				// Change other fields to ensure only chainId, transactionHash and logIndex are checked
 				blockNumber: 12345679,
 			})
 		).rejects.toThrow(/duplicate key error/);
+
+		// Create event with same transactionHash and logIndex but different chainId (should succeed)
+		const eventWithDifferentChain = await FeeCollectedEventModel.create({
+			...eventData,
+			chainId: 2,
+		});
+		expect(eventWithDifferentChain).toBeDefined();
+		expect(eventWithDifferentChain.chainId).toBe(2);
 	});
 
 	it("should store fees as strings to prevent precision issues", async () => {
@@ -140,26 +147,24 @@ describe("FeeCollectedEvent Model", () => {
 
 		const indexes = await FeeCollectedEventModel.collection.indexes();
 
-		// Check for compound index on transactionHash and logIndex
+		// Check for compound unique index on chainId, transactionHash and logIndex
 		const compoundIndex = indexes.find(
 			(index) =>
+				index.key.chainId === 1 &&
 				index.key.transactionHash === 1 &&
 				index.key.logIndex === 1 &&
 				index.unique === true
 		);
 		expect(compoundIndex).toBeDefined();
 
-		// Check for single field indexes
-		const singleFieldIndexes = [
-			"chainId",
-			"token",
-			"integrator",
-			"blockNumber",
-		];
-		singleFieldIndexes.forEach((field) => {
-			const index = indexes.find((idx) => idx.key[field] === 1);
-			expect(index).toBeDefined();
-		});
+		// Check for compound index on integrator and chainId
+		const integratorChainIndex = indexes.find(
+			(index) =>
+				index.key.integrator === 1 &&
+				index.key.chainId === 1 &&
+				index.name === "integrator_chain_index"
+		);
+		expect(integratorChainIndex).toBeDefined();
 	});
 
 	it("should update timestamps on document modification", async () => {

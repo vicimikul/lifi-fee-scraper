@@ -1,6 +1,6 @@
 # LiFi Fee Scraper
 
-A tool for scraping, storing and serving events from LiFi's fee collector smart contracts across multiple EVM networks.
+A tool for scraping, storing and serving events from LiFi's fee collector smart contracts across multiple EVM networks. It supports one or multiple networks at the same time, being able to index them synchronously. 
 
 ## Features
 
@@ -24,16 +24,20 @@ A tool for scraping, storing and serving events from LiFi's fee collector smart 
 
 ### Installation & Start
 
+Once you have the dependencies above installed, create a .env file with a structure similar to the .env.example file. Key variables you will need: 
+- Production MongDB URI 
+- Testing MongoDB URI (I used a simple /test database as part of the same mongodb cluster)
+- RPC URLs for the chains you want to work with 
+- Starting blocks for the chains you want to index (I already provided the ones for ETH and Polygon)
+- ENABLED_CHAINS - this is the key variable, as it sets the desired chains to index. You need to use chainIds separated by a comma, as shown in the example file
+
+Everything else can be copied from the example file. Once you have these variables setup, proceed to instalation and then you can run the application using the commands below: 
+
+
 #### Install dependencies:
 
 ```bash
 npm install
-```
-
-#### Build the project:
-
-```bash
-npm run build
 ```
 
 #### Run the application:
@@ -46,6 +50,14 @@ npm start
 
 ```bash
 docker-compose up --build
+```
+
+#### REST API Endpoint:
+
+Called using Postman or another service locally:
+
+```bash
+http://localhost:3000/events/integrator/{chainId}/{integrator_address}
 ```
 
 ## Development
@@ -96,6 +108,18 @@ src/
 - jest & superterst
 - Docker
 
+### Next Steps
+
+If I were to continue the project, here are some key areas of focus:
+
+- WebSocket Providers to index blockchain events real-time
+- Implement data batch processing and potentially Redis caching for highly used documents
+- Add pagination, filtering and sorting for the REST API endpoint
+- Setup CI/CD pipeline for a better development experience
+- User Experience: 
+  - Minimal Frontend to show data through the API
+  - CLI tool to interact with the database through the API
+
 ## Testing
 
 ### Overview
@@ -113,13 +137,13 @@ The project uses Jest as the testing framework, and Supertest for API testing. T
 npm test
 
 # Run unit tests only
-npm run test:unit
+npm run test unit
 
 # Run integration tests only
-npm run test:integration
+npm run test integration
 
 # Run E2E tests only
-npm run test:e2e
+npm run test e2e
 
 # Run tests with coverage
 npm run test:coverage
